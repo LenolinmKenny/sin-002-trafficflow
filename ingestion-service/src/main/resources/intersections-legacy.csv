@@ -1,19 +1,19 @@
-intersection_id,District ,signal_type,active_flag
-INT-1001, Downtown ,4-way,Y
-int-1002,Midtown,pedestrian,yes
-INT-1003 ,downtown,4-way,0
+intersection_id,district,signal_type,active_flag
+INT-1001,Downtown,4-way,Y
+int-1002,Midtown,Pedestrian,Y
+INT-1003,Downtown,4-way,N
 INT-1004,Uptown,unknown,Y
-INT-1005,Downtown,Roundabout,true
-int-1005,downtown ,ROUNDABOUT,TRUE
-INT-1006,Midtown,4-Way,no
-INT-1007,Eastside,,1
-INT-1008,uptown,pedestrian,N
-INT-1009,Westside,4-way,FALSE
-INT-1010,Downtown ,stop-sign,Y
-INT-1011,midtown,4-way,yes
-int-1012,Eastside,ROUNDABOUT,0
-INT-1013,Westside ,unknown,unknown
-INT-1014,Uptown,Pedestrian,1
-INT-1015,,4-way,Y
-INT-1016,Downtown,4-way,YES
-INT-1017,eastside,stop-sign,n
+INT-1005,Downtown,Roundabout,Y
+int-1005,Downtown,Roundabout,Y
+INT-1006,Midtown,4-way,N
+INT-1007,Eastside,unknown,Y
+INT-1008,Uptown,Pedestrian,N
+INT-1009,Westside,4-way,N
+INT-1010,Downtown,stop-sign,Y
+INT-1011,Midtown,4-way,Y
+int-1012,Eastside,Roundabout,N
+INT-1013,Westside,unknown,unknown
+INT-1014,Uptown,Pedestrian,Y
+INT-1015,unknown,4-way,Y
+INT-1016,Downtown,4-way,Y
+INT-1017,Eastside,stop-sign,N
