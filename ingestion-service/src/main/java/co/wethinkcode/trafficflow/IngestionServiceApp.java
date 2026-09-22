@@ -82,5 +82,25 @@ public class IngestionServiceApp {
                 a.active() || b.active()
         );
     }
+
+    private static String toJson(List<Intersection> records) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < records.size(); i++) {
+            Intersection r = records.get(i);
+            if (i > 0) sb.append(",");
+            sb.append("{")
+                    .append("\"id\":").append(quote(r.id())).append(",")
+                    .append("\"district\":").append(quote(r.district())).append(",")
+                    .append("\"signalType\":").append(quote(r.signalType())).append(",")
+                    .append("\"active\":").append(r.active())
+                    .append("}");
+        }
+        return sb.append("]").toString();
+    }
+
+    private static String quote(String s) {
+        if (s == null) return "null";
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
 }
 
