@@ -4,21 +4,27 @@ import io.javalin.Javalin;
 
 public class IngestionServiceApp {
 
-    public static void main(String[] args) {
-        Javalin app = Javalin.create().start(7020);
-
-        app.get("/health", ctx -> ctx.result("OK"));
-        // TODO: read and clean src/main/resources/intersections-legacy.csv (intersections, districts, signal types data —
-        // trim whitespace, fix casing, normalize dates/booleans) and expose the
-        // cleaned records here for the other services to consume.
-    }
+    public record Intersection(String id, String district, String signalType, boolean active) {}
 
     private static final List<String> PLACEHOLDERS = List.of("n/a", "unknown", "null", "nil", "none", "");
 
-    /**
-      Parses and cleans the CSV from the supplied reader.
+    public static void main(String[] args) throws Exception {
+        List<Intersection> intersections;
+        try (var in = IngestionServiceApp.class
+                .getResourceAsStream("/intersections-legacy.csv")) {
+            if (in == null) throw new IllegalStateException("CSV not on classpath");
+            intersections = cleanCsv(new InputStreamReader(in, StandardCharsets.UTF_8));
+        }
 
-      Expected header: intersection_id, District, signal_type, active_flag
+        Javalin app = Javalin.create().start(7020);
+        app.get("/health",        ctx -> ctx.result("OK"));
+        app.get("/intersections", ctx -> ctx.json(intersections));
+    }
+
+    /**
+     * Parses and cleans the CSV from the supplied reader.
+     *
+     * Expected header: intersection_id, District, signal_type, active_flag
      */
     public static List<Intersection> cleanCsv(Reader reader) throws IOException, CsvValidationException {
         Map<String, Intersection> cleaned = new LinkedHashMap<>();
@@ -38,7 +44,7 @@ public class IngestionServiceApp {
                         cleanSignalType(row[2]),
                         parseActive(row[3])
                 );
-                cleaned.merge(id, candidate, CsvProcessor::merge);
+                cleaned.merge(id, candidate, IngestionServiceApp::merge);
             }
         }
         return new ArrayList<>(cleaned.values());
@@ -69,11 +75,7 @@ public class IngestionServiceApp {
         return raw.trim().toLowerCase().matches("^(y|yes|1|true)$");
     }
 
-    /**
-     * Merge two records that share a normalized ID.
-     * - district / signalType: keep the first non-null value.
-     * - active: OR (if either duplicate claimed active, treat as active).
-     */
+    /** Merge two records that share a normalized ID. */
     private static Intersection merge(Intersection a, Intersection b) {
         return new Intersection(
                 a.id(),
@@ -81,26 +83,6 @@ public class IngestionServiceApp {
                 a.signalType() != null ? a.signalType() : b.signalType(),
                 a.active() || b.active()
         );
-    }
-
-    private static String toJson(List<Intersection> records) {
-        StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < records.size(); i++) {
-            Intersection r = records.get(i);
-            if (i > 0) sb.append(",");
-            sb.append("{")
-                    .append("\"id\":").append(quote(r.id())).append(",")
-                    .append("\"district\":").append(quote(r.district())).append(",")
-                    .append("\"signalType\":").append(quote(r.signalType())).append(",")
-                    .append("\"active\":").append(r.active())
-                    .append("}");
-        }
-        return sb.append("]").toString();
-    }
-
-    private static String quote(String s) {
-        if (s == null) return "null";
-        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 }
 
