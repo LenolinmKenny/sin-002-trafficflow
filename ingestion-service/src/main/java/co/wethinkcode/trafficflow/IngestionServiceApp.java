@@ -1,5 +1,17 @@
 package co.wethinkcode.trafficflow;
 
+import com.opencsv.CSVReader;
+import com.opencsv.exceptions.CsvValidationException;
+
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import io.javalin.Javalin;
 
 public class IngestionServiceApp {
@@ -18,7 +30,7 @@ public class IngestionServiceApp {
 
         Javalin app = Javalin.create().start(7020);
         app.get("/health",        ctx -> ctx.result("OK"));
-        app.get("/intersections", ctx -> ctx.json(intersections));
+     //   app.get("/intersections", ctx -> ctx.json(intersections));
     }
 
     /**
