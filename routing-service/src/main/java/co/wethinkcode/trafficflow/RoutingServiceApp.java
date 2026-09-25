@@ -7,17 +7,33 @@ import io.javalin.Javalin;
 import org.apache.activemq.ActiveMQConnectionFactory;
 
 import javax.jms.*;
+import java.lang.IllegalStateException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 
 public class RoutingServiceApp {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    /** Latest congestion level received from congestion-service. */
-    private static volatile int congestionLevel = 0;
+    private static final HttpClient HTTP = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(2))
+            .build();
 
-    /** When we last heard from the congestion topic. */
-    private static volatile Instant lastUpdate = null;
+    private static final String INTERSECTION_URL = "http://localhost:7021";
+    private static final String CONGESTION_URL   = "http://localhost:7022";
+
+    /** Base travel time in minutes, single-hop, before congestion. */
+    private static final double BASE_MINUTES = 10.0;
+
+    /** Multiplier per congestion level. 0 → 1.0x, 8 → 2.2x. */
+    private static final double CONGESTION_FACTOR = 0.15;
+
+    /** Latest congestion level received from congestion-topic. -1 = never received. */
+    private static volatile int mqCongestionLevel = -1;
 
     public static void main(String[] args) throws Exception {
         startCongestionSubscriber();
@@ -26,8 +42,8 @@ public class RoutingServiceApp {
         app.get("/health", ctx -> ctx.result("OK"));
 
         app.get("/congestion", ctx -> ctx.json(Map.of(
-                "level", congestionLevel,
-                "lastUpdate", lastUpdate == null ? null : lastUpdate.toString()
+                "level", mqCongestionLevel,
+                "source", mqCongestionLevel >= 0 ? "mq" : "none"
         )));
 
         app.get("/route", ctx -> {
@@ -37,7 +53,48 @@ public class RoutingServiceApp {
                 ctx.status(400).result("from and to query params required");
                 return;
             }
-            ctx.status(501).result("Not implemented — needs base-time data + formula");
+            try {
+                if (!isValidIntersection(from)) {
+                    ctx.status(404).json(Map.of("error", "Unknown intersection: " + from));
+                    return;
+                }
+                if (!isValidIntersection(to)) {
+                    ctx.status(404).json(Map.of("error", "Unknown intersection: " + to));
+                    return;
+                }
+            } catch (Exception e) {
+                ctx.status(503).json(Map.of("error",
+                        "intersection-service unreachable: " + e.getMessage()));
+                return;
+            }
+
+            int level;
+            String source;
+            if (mqCongestionLevel >= 0) {
+                level = mqCongestionLevel;
+                source = "mq";
+            } else {
+                try {
+                    level = fetchCongestionOverHttp();
+                    source = "http";
+                } catch (Exception e) {
+                    ctx.status(503).json(Map.of("error",
+                            "congestion-service unreachable: " + e.getMessage()));
+                    return;
+                }
+            }
+
+            double minutes = BASE_MINUTES * (1.0 + level * CONGESTION_FACTOR);
+
+            ctx.json(Map.of(
+                    "from", from,
+                    "to", to,
+                    "congestionLevel", level,
+                    "congestionSource", source,
+                    "estimatedMinutes", Math.round(minutes * 10) / 10.0,
+                    "timestamp", Instant.now().toString()
+            ));
+
 
             // TODO (Provides estimated travel times based on congestion and intersection.)
             // Add domain endpoints for routing-service here.
@@ -49,9 +106,7 @@ public class RoutingServiceApp {
      * closed via try-with-resources.
      */
     private static void startCongestionSubscriber() throws Exception {
-        ActiveMQConnectionFactory factory =
-                new ActiveMQConnectionFactory(MqConfig.BROKER_URL);
-
+        ActiveMQConnectionFactory factory = new ActiveMQConnectionFactory(MqConfig.BROKER_URL);
         Connection conn = factory.createConnection();
         conn.start();
 
@@ -63,14 +118,34 @@ public class RoutingServiceApp {
             try {
                 if (msg instanceof TextMessage tm) {
                     JsonNode node = MAPPER.readTree(tm.getText());
-                    congestionLevel = node.path("level").asInt(0);
-                    lastUpdate = Instant.now();
-                    System.out.println("Congestion update: level=" + congestionLevel);
+                    mqCongestionLevel = node.path("level").asInt(0);
+                    System.out.println("Congestion update (mq): level=" + mqCongestionLevel);
                 }
             } catch (Exception e) {
                 System.err.println("Bad congestion message: " + e.getMessage());
             }
         });
+    }
+
+    /** Returns true if intersection-service recognises the ID. */
+    private static boolean isValidIntersection(String id) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(
+                URI.create(INTERSECTION_URL + "/validate/intersection/" + id)).GET().build();
+        HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() != 200) return false;
+        JsonNode node = MAPPER.readTree(res.body());
+        return node.path("valid").asBoolean(false);
+    }
+
+    /** HTTP fallback when no MQ beat has arrived yet. */
+    private static int fetchCongestionOverHttp() throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(
+                URI.create(CONGESTION_URL + "/congestion")).GET().build();
+        HttpResponse<String> res = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() != 200) {
+            throw new IllegalStateException("status " + res.statusCode());
+        }
+        return MAPPER.readTree(res.body()).path("level").asInt(0);
     }
 }
 
